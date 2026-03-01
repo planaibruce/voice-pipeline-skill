@@ -18,8 +18,19 @@ Automated audio cleaning (ClearVoice) and transcription (Whisper) for any audio 
 - **Audio Export:** Saves cleaned + shortened MP3 in `~/voice-transcripts`.
 - **Runtime Discovery:** Detects installed Whisper/ClearVoice paths and reports missing deps with OS-specific install commands.
 
-## Usage
-The agent uses this skill automatically when audio is detected. You can also run it manually:
+## Agent Runtime Instructions
+
+When a user sends an audio file or zip:
+1. **Immediate Feedback:** IMMEDIATELY reply to the user acknowledging receipt (e.g., "I'm processing your audio file now. This might take a moment...").
+2. **Execution:** Invoke `{baseDir}/scripts/process-audio` on the file. If it fails on missing deps, run `--check` and surface missing items.
+3. **Summary:** Read the resulting transcript and create a short, highly accurate semantic summary of the content (do not just copy the text).
+4. **Attachments:** You MUST attach the transcript and the cleaned audio using the EXACT paths from the script output. Use the `MEDIA:<path>` syntax as plain text at the very end of your response (do NOT wrap in markdown code blocks):
+   MEDIA:<path-to-transcript.txt>
+   MEDIA:<path-to-clean-short.mp3>
+
+## CLI Usage
+
+You can also run the underlying script manually:
 
 ```bash
 {baseDir}/scripts/process-audio <file_or_zip> [options]

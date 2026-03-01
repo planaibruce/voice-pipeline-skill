@@ -251,7 +251,7 @@ build_clean_short_audio() {
     local output_wav="$2"
     local output_mp3="$3"
     local silence_filter
-    silence_filter="silenceremove=start_periods=1:start_duration=0.12:start_threshold=-35dB:detection=rms,areverse,silenceremove=start_periods=1:start_duration=0.12:start_threshold=-35dB:detection=rms,areverse,silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-38dB:detection=rms"
+    silence_filter="silenceremove=start_periods=1:start_duration=0.08:start_threshold=-40dB:detection=rms,areverse,silenceremove=start_periods=1:start_duration=0.08:start_threshold=-40dB:detection=rms,areverse,silenceremove=stop_periods=-1:stop_duration=0.25:stop_threshold=-40dB:detection=rms"
 
     ffmpeg -hide_banner -loglevel error -y -i "$input_audio" -vn -sn -dn -map 0:a:0 -af "$silence_filter" -ac 1 -ar 16000 "$output_wav" 2> >(ffmpeg_err_filter >&2) || {
         warn "Silence removal failed, using enhanced audio without shortening"
