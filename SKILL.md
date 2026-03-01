@@ -42,9 +42,9 @@ Options:
 - 4GB+ RAM (8GB+ recommended for large models)
 - NVIDIA GPU or Apple Silicon (optional for speed)
 
-## Install Resources
-- `resources/install/macos.txt`
-- `resources/install/linux-apt.txt`
-- `resources/install/linux-pacman.txt`
-- `resources/install/linux-dnf.txt`
-- `resources/install/linux-zypper.txt`
+## Install References
+- `references/install/macos.txt`
+- `references/install/linux-apt.txt`
+- `references/install/linux-pacman.txt`
+- `references/install/linux-dnf.txt`
+- `references/install/linux-zypper.txt`

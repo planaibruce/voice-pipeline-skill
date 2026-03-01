@@ -5,7 +5,7 @@ set -euo pipefail
 # Config
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-RES_DIR="${BASE_DIR}/resources/install"
+RES_DIR="${BASE_DIR}/references/install"
 VENV_BASE="${HOME}/.venvs/voice-pipeline"
 WHISPER_VENV="${VENV_BASE}/whisper"
 CV_VENV="${VENV_BASE}/clearvoice"
