@@ -354,30 +354,62 @@ process_file() {
 
     if [[ "$run_enhance" == "true" ]]; then
         [[ -n "$CV_PY" ]] || error "ClearVoice runtime not found. Run --check and install ClearVoice locally, or use --no-enhance."
-        log "Enhancing $base_name..."
+        log "Enhancing $base_name (this may take a minute)..."
         local enhanced="/tmp/enhanced_${timestamp}_${base_name}.wav"
-        CV_INPUT="$file" CV_OUTPUT="$enhanced" "$CV_PY" - <<'PY' || error "ClearVoice enhancement failed for $base_name"
+        local cv_err="/tmp/cv_err_${timestamp}.log"
+        
+        CV_INPUT="$file" CV_OUTPUT="$enhanced" "$CV_PY" - <<'PY' >/dev/null 2>"$cv_err" &
 import os
+import sys
 import numpy as np
 import soundfile as sf
-from clearvoice import ClearVoice
+import warnings
+import logging
+warnings.filterwarnings("ignore")
+logging.getLogger().setLevel(logging.ERROR)
+try:
+    from clearvoice import ClearVoice
+except ImportError:
+    sys.exit(1)
 
 input_file = os.environ["CV_INPUT"]
 output_file = os.environ["CV_OUTPUT"]
 
-cv = ClearVoice(task='speech_enhancement', model_names=['MossFormer2_SE_48K'])
-result = cv(input_file)
-
-if isinstance(result, np.ndarray):
-    audio = result
-    if audio.ndim > 1 and audio.shape[0] == 1:
-        audio = audio.T
-    sf.write(output_file, audio, 48000)
-elif isinstance(result, str) and os.path.isfile(result):
-    os.replace(result, output_file)
-else:
-    raise RuntimeError(f"Unexpected ClearVoice result type: {type(result)}")
+try:
+    cv = ClearVoice(task='speech_enhancement', model_names=['MossFormer2_SE_48K'])
+    result = cv(input_file)
+    if isinstance(result, np.ndarray):
+        audio = result
+        if audio.ndim > 1 and audio.shape[0] == 1:
+            audio = audio.T
+        sf.write(output_file, audio, 48000)
+    elif isinstance(result, str) and os.path.isfile(result):
+        os.replace(result, output_file)
+    else:
+        raise RuntimeError(f"Unexpected ClearVoice result type: {type(result)}")
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
 PY
+        local cv_pid=$!
+        local frames="/-\|"
+        local i=0
+        local start_time=$(date +%s)
+        while kill -0 $cv_pid 2>/dev/null; do
+            local now=$(date +%s)
+            local elapsed=$((now - start_time))
+            printf "\r  \033[0;36m%s\033[0m ClearVoice AI computing... %ds " "${frames:$i:1}" "$elapsed"
+            i=$(( (i + 1) % 4 ))
+            sleep 0.15
+        done
+        printf "\r\033[K" # Clear the spinner line
+        
+        wait $cv_pid || {
+            cat "$cv_err" >&2
+            error "ClearVoice enhancement failed for $base_name"
+        }
+        rm -f "$cv_err"
+        
         [[ -f "$enhanced" ]] || error "ClearVoice did not produce an output file for $base_name"
         work_file="$enhanced"
     fi
