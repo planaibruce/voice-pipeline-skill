@@ -1,0 +1,467 @@
+#!/usr/bin/env bash
+# process-audio - Independent Voice Pipeline
+set -euo pipefail
+
+# Config
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BASE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+RES_DIR="${BASE_DIR}/resources/install"
+VENV_BASE="${HOME}/.venvs/voice-pipeline"
+WHISPER_VENV="${VENV_BASE}/whisper"
+CV_VENV="${VENV_BASE}/clearvoice"
+LEGACY_CV_VENV="${HOME}/.venvs/clearvoice"
+OPENCLAW_VENV_BASE="${HOME}/.openclaw/venvs"
+ALT_WHISPER_VENV="${OPENCLAW_VENV_BASE}/whisper"
+ALT_CV_VENV="${OPENCLAW_VENV_BASE}/clearvoice"
+OUT_DIR="${HOME}/transcripts"
+DEFAULT_MODEL="large-v3"
+DEFAULT_LANG="de"
+WHISPER_BIN=""
+WHISPER_PY=""
+CV_PY=""
+TRANSCRIBE_MODEL_USED=""
+
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+log() { echo -e "${BLUE}[voice-pipeline]${NC} $1"; }
+warn() { echo -e "${YELLOW}[warn]${NC} $1"; }
+error() { echo -e "${RED}[error]${NC} $1"; exit 1; }
+
+has_cmd() { command -v "$1" &>/dev/null; }
+python_has_module() {
+    local py_bin="$1"
+    local module_name="$2"
+    [[ -x "$py_bin" ]] || return 1
+    "$py_bin" -c "import ${module_name}" >/dev/null 2>&1
+}
+
+ffmpeg_err_filter() {
+    grep -vE '^mpp\[[0-9]+\]:'
+}
+
+detect_device() {
+    if [[ -n "$WHISPER_PY" ]]; then
+        "$WHISPER_PY" -c "import torch; print('cuda' if torch.cuda.is_available() else ('mps' if getattr(torch.backends, 'mps', None) and torch.backends.mps.is_available() else 'cpu'))" 2>/dev/null || echo "cpu"
+    else
+        echo "cpu"
+    fi
+}
+
+resolve_runtime() {
+    WHISPER_BIN=""
+    WHISPER_PY=""
+    CV_PY=""
+
+    if [[ -x "$WHISPER_VENV/bin/whisper" ]]; then
+        WHISPER_BIN="$WHISPER_VENV/bin/whisper"
+        WHISPER_PY="$WHISPER_VENV/bin/python"
+    elif [[ -x "$ALT_WHISPER_VENV/bin/whisper" ]]; then
+        WHISPER_BIN="$ALT_WHISPER_VENV/bin/whisper"
+        WHISPER_PY="$ALT_WHISPER_VENV/bin/python"
+    elif has_cmd whisper; then
+        WHISPER_BIN="$(command -v whisper)"
+        local bin_dir
+        bin_dir="$(dirname "$WHISPER_BIN")"
+        [[ -x "$bin_dir/python" ]] && WHISPER_PY="$bin_dir/python"
+    fi
+
+    if [[ -x "$CV_VENV/bin/python" ]] && python_has_module "$CV_VENV/bin/python" "clearvoice"; then
+        CV_PY="$CV_VENV/bin/python"
+    elif [[ -x "$LEGACY_CV_VENV/bin/python" ]] && python_has_module "$LEGACY_CV_VENV/bin/python" "clearvoice"; then
+        CV_PY="$LEGACY_CV_VENV/bin/python"
+    elif [[ -x "$ALT_CV_VENV/bin/python" ]] && python_has_module "$ALT_CV_VENV/bin/python" "clearvoice"; then
+        CV_PY="$ALT_CV_VENV/bin/python"
+    elif [[ -n "$WHISPER_PY" ]] && python_has_module "$WHISPER_PY" "clearvoice"; then
+        CV_PY="$WHISPER_PY"
+    elif has_cmd python3 && python_has_module "$(command -v python3)" "clearvoice"; then
+        CV_PY="$(command -v python3)"
+    elif has_cmd python && python_has_module "$(command -v python)" "clearvoice"; then
+        CV_PY="$(command -v python)"
+    fi
+}
+
+print_file() {
+    local file="$1"
+    [[ -f "$file" ]] || return 1
+    while IFS= read -r line; do
+        printf '%s\n' "$line"
+    done < "$file"
+}
+
+print_install_plan() {
+    local os
+    os="$(uname -s)"
+
+    log "Installation is manual by design. Run these commands yourself:"
+
+    if [[ "$os" == "Darwin" ]]; then
+        print_file "${RES_DIR}/macos.txt" || warn "Missing ${RES_DIR}/macos.txt"
+        return 0
+    fi
+
+    if [[ "$os" == "Linux" ]]; then
+        if has_cmd pacman; then
+            print_file "${RES_DIR}/linux-pacman.txt" || warn "Missing ${RES_DIR}/linux-pacman.txt"
+        elif has_cmd apt-get; then
+            print_file "${RES_DIR}/linux-apt.txt" || warn "Missing ${RES_DIR}/linux-apt.txt"
+        elif has_cmd dnf; then
+            print_file "${RES_DIR}/linux-dnf.txt" || warn "Missing ${RES_DIR}/linux-dnf.txt"
+        elif has_cmd zypper; then
+            print_file "${RES_DIR}/linux-zypper.txt" || warn "Missing ${RES_DIR}/linux-zypper.txt"
+        else
+            warn "No supported package manager detected."
+            warn "Use your distro package manager to install: python3, python3-venv, ffmpeg, unzip"
+        fi
+        return 0
+    fi
+
+    warn "Unsupported OS: ${os}"
+}
+
+check_deps() {
+    resolve_runtime
+    log "Checking dependencies..."
+    local missing=0
+
+    if has_cmd python3; then printf 'python3: ok (%s)\n' "$(command -v python3)"; else printf 'python3: missing\n'; missing=$((missing + 1)); fi
+    if has_cmd ffmpeg; then printf 'ffmpeg: ok (%s)\n' "$(command -v ffmpeg)"; else printf 'ffmpeg: missing\n'; missing=$((missing + 1)); fi
+    if has_cmd ffprobe; then printf 'ffprobe: ok (%s)\n' "$(command -v ffprobe)"; else printf 'ffprobe: missing\n'; missing=$((missing + 1)); fi
+    if has_cmd unzip; then printf 'unzip: ok (%s)\n' "$(command -v unzip)"; else printf 'unzip: missing\n'; missing=$((missing + 1)); fi
+
+    if [[ -n "$WHISPER_BIN" ]]; then
+        printf 'whisper: ok (%s)\n' "$WHISPER_BIN"
+    else
+        printf 'whisper: missing\n'
+        missing=$((missing + 1))
+    fi
+
+    if [[ -n "$CV_PY" ]]; then
+        printf 'clearvoice runtime: ok (%s)\n' "$CV_PY"
+    else
+        printf 'clearvoice runtime: missing\n'
+        missing=$((missing + 1))
+    fi
+
+    if [[ -n "$WHISPER_PY" ]] && "$WHISPER_PY" -c "import torch" >/dev/null 2>&1; then
+        printf 'torch (whisper runtime): ok\n'
+    else
+        printf 'torch (whisper runtime): missing\n'
+        missing=$((missing + 1))
+    fi
+
+    if [[ "$missing" -gt 0 ]]; then
+        warn "${missing} dependency checks failed."
+        print_install_plan
+    else
+        log "All dependencies look good."
+    fi
+}
+
+doctor() {
+    resolve_runtime
+    log "Runtime diagnostics"
+    printf 'OS: %s\n' "$(uname -s)"
+    printf 'python3: %s\n' "$(command -v python3 || echo missing)"
+    printf 'ffmpeg: %s\n' "$(command -v ffmpeg || echo missing)"
+    printf 'ffprobe: %s\n' "$(command -v ffprobe || echo missing)"
+    printf 'unzip: %s\n' "$(command -v unzip || echo missing)"
+    printf 'whisper_bin: %s\n' "${WHISPER_BIN:-missing}"
+    printf 'whisper_py: %s\n' "${WHISPER_PY:-missing}"
+    printf 'clearvoice_py: %s\n' "${CV_PY:-missing}"
+    if [[ -n "$WHISPER_PY" ]]; then
+        printf 'device: %s\n' "$(detect_device)"
+    fi
+}
+
+ensure_processing_ready() {
+    local require_enhance="$1"
+    local missing=0
+
+    has_cmd ffmpeg || { warn "ffmpeg missing"; missing=$((missing + 1)); }
+    has_cmd ffprobe || { warn "ffprobe missing"; missing=$((missing + 1)); }
+    has_cmd unzip || { warn "unzip missing"; missing=$((missing + 1)); }
+    [[ -n "$WHISPER_BIN" ]] || { warn "Whisper CLI not found"; missing=$((missing + 1)); }
+
+    if [[ "$require_enhance" == "true" && -z "$CV_PY" ]]; then
+        warn "ClearVoice runtime not found"
+        missing=$((missing + 1))
+    fi
+
+    if [[ "$missing" -gt 0 ]]; then
+        print_install_plan
+        error "Missing runtime dependencies. Run --doctor, then install commands above, then retry."
+    fi
+}
+
+detect_de_en_language() {
+    local input_audio="$1"
+    local snippet
+    snippet="$(mktemp --suffix=.wav)"
+
+    if ! ffmpeg -hide_banner -loglevel error -y -t 30 -i "$input_audio" -vn -sn -dn -map 0:a:0 -ac 1 -ar 16000 "$snippet" 2> >(ffmpeg_err_filter >&2); then
+        rm -f "$snippet"
+        echo "de"
+        return
+    fi
+
+    if [[ -z "$WHISPER_PY" ]]; then
+        rm -f "$snippet"
+        echo "de"
+        return
+    fi
+
+    local detected
+    detected="$(LANG_SNIPPET="$snippet" "$WHISPER_PY" - <<'PY' 2>/dev/null || true
+import os
+import whisper
+
+snippet = os.environ["LANG_SNIPPET"]
+model = whisper.load_model("tiny")
+audio = whisper.load_audio(snippet)
+audio = whisper.pad_or_trim(audio)
+mel = whisper.log_mel_spectrogram(audio).to(model.device)
+_, probs = model.detect_language(mel)
+
+de = float(probs.get("de", 0.0))
+en = float(probs.get("en", 0.0))
+
+if de >= en * 0.9:
+    print("de")
+else:
+    print("en")
+PY
+)"
+
+    rm -f "$snippet"
+
+    if [[ "$detected" == "de" || "$detected" == "en" ]]; then
+        echo "$detected"
+    else
+        echo "de"
+    fi
+}
+
+build_clean_short_audio() {
+    local input_audio="$1"
+    local output_wav="$2"
+    local output_mp3="$3"
+    local silence_filter
+    silence_filter="silenceremove=start_periods=1:start_duration=0.12:start_threshold=-35dB:detection=rms,areverse,silenceremove=start_periods=1:start_duration=0.12:start_threshold=-35dB:detection=rms,areverse,silenceremove=stop_periods=-1:stop_duration=0.9:stop_threshold=-38dB:detection=rms"
+
+    ffmpeg -hide_banner -loglevel error -y -i "$input_audio" -vn -sn -dn -map 0:a:0 -af "$silence_filter" -ac 1 -ar 16000 "$output_wav" 2> >(ffmpeg_err_filter >&2) || {
+        warn "Silence removal failed, using enhanced audio without shortening"
+        ffmpeg -hide_banner -loglevel error -y -i "$input_audio" -vn -sn -dn -map 0:a:0 -ac 1 -ar 16000 "$output_wav" 2> >(ffmpeg_err_filter >&2) || return 1
+    }
+
+    ffmpeg -hide_banner -loglevel error -y -i "$output_wav" -vn -sn -dn -map 0:a:0 -ac 1 -ar 16000 -c:a libmp3lame -b:a 48k "$output_mp3" 2> >(ffmpeg_err_filter >&2) || return 1
+}
+
+build_transcribe_audio() {
+    local input_audio="$1"
+    local output_wav="$2"
+    local prep_filter
+    prep_filter="silenceremove=start_periods=1:start_duration=0.10:start_threshold=-38dB:detection=rms,areverse,silenceremove=start_periods=1:start_duration=0.10:start_threshold=-38dB:detection=rms,areverse,highpass=f=70,lowpass=f=9000,loudnorm=I=-18:LRA=11:TP=-1.5"
+
+    ffmpeg -hide_banner -loglevel error -y -i "$input_audio" -vn -sn -dn -map 0:a:0 -af "$prep_filter" -ac 1 -ar 16000 "$output_wav" 2> >(ffmpeg_err_filter >&2) || {
+        warn "Transcription prep failed, falling back to basic mono 16k conversion"
+        ffmpeg -hide_banner -loglevel error -y -i "$input_audio" -vn -sn -dn -map 0:a:0 -ac 1 -ar 16000 "$output_wav" 2> >(ffmpeg_err_filter >&2) || return 1
+    }
+}
+
+run_whisper_transcription() {
+    local input_wav="$1"
+    local output_dir="$2"
+    local lang_arg="$3"
+    local requested_model="$4"
+    local allow_cpu_fallback="$5"
+
+    local device
+    device="$(detect_device)"
+    local err_log
+    err_log="$output_dir/whisper.err"
+
+    local gpu_args
+    gpu_args="--beam_size 3 --best_of 3 --temperature 0 --patience 1.0 --condition_on_previous_text True"
+    local cpu_args
+    cpu_args="--beam_size 1 --best_of 1 --temperature 0 --patience 0.8 --condition_on_previous_text True"
+
+    if [[ "$device" == "cpu" ]]; then
+        "$WHISPER_BIN" "$input_wav" --model "$requested_model" --output_dir "$output_dir" --output_format txt --device cpu $lang_arg --verbose False $cpu_args 2>"$err_log" || return 1
+        TRANSCRIBE_MODEL_USED="$requested_model"
+        return 0
+    fi
+
+    local -a gpu_models
+    gpu_models=("$requested_model")
+    [[ "$requested_model" != "large-v3-turbo" ]] && gpu_models+=("large-v3-turbo")
+    [[ "$requested_model" != "medium" ]] && gpu_models+=("medium")
+    [[ "$requested_model" != "small" ]] && gpu_models+=("small")
+
+    local model
+    for model in "${gpu_models[@]}"; do
+        if PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True "$WHISPER_BIN" "$input_wav" --model "$model" --output_dir "$output_dir" --output_format txt --device cuda $lang_arg --verbose False $gpu_args 2>"$err_log"; then
+            TRANSCRIBE_MODEL_USED="$model"
+            return 0
+        fi
+
+        if [[ -f "$err_log" ]] && grep -qi "CUDA out of memory" "$err_log"; then
+            warn "CUDA OOM with model '$model'. Retrying on GPU with a smaller model..."
+            continue
+        fi
+
+        break
+    done
+
+    if [[ "$allow_cpu_fallback" == "true" ]]; then
+        warn "GPU transcription failed. Retrying on CPU with lighter settings..."
+        "$WHISPER_BIN" "$input_wav" --model "large-v3-turbo" --output_dir "$output_dir" --output_format txt --device cpu $lang_arg --verbose False $cpu_args 2>>"$err_log" || return 1
+        TRANSCRIBE_MODEL_USED="large-v3-turbo"
+        return 0
+    fi
+
+    warn "GPU-only mode active: no CPU fallback used."
+    return 1
+}
+
+process_file() {
+    local file="$1"
+    local lang="${2:-$DEFAULT_LANG}"
+    local model="${3:-$DEFAULT_MODEL}"
+    local enhance_mode="${4:-true}"
+    local allow_cpu_fallback="${5:-false}"
+
+    local work_file="$file"
+    local base_name
+    base_name=$(basename "$file")
+    local stem
+    stem=$(basename "${file%.*}")
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+    local run_enhance="false"
+
+    # 1. Enhance
+    if [[ "$enhance_mode" == "false" ]]; then
+        run_enhance="false"
+    else
+        run_enhance="true"
+    fi
+
+    if [[ "$run_enhance" == "true" ]]; then
+        [[ -n "$CV_PY" ]] || error "ClearVoice runtime not found. Run --check and install ClearVoice locally, or use --no-enhance."
+        log "Enhancing $base_name..."
+        local enhanced="/tmp/enhanced_${timestamp}_${base_name}.wav"
+        CV_INPUT="$file" CV_OUTPUT="$enhanced" "$CV_PY" - <<'PY' || error "ClearVoice enhancement failed for $base_name"
+import os
+import numpy as np
+import soundfile as sf
+from clearvoice import ClearVoice
+
+input_file = os.environ["CV_INPUT"]
+output_file = os.environ["CV_OUTPUT"]
+
+cv = ClearVoice(task='speech_enhancement', model_names=['MossFormer2_SE_48K'])
+result = cv(input_file)
+
+if isinstance(result, np.ndarray):
+    audio = result
+    if audio.ndim > 1 and audio.shape[0] == 1:
+        audio = audio.T
+    sf.write(output_file, audio, 48000)
+elif isinstance(result, str) and os.path.isfile(result):
+    os.replace(result, output_file)
+else:
+    raise RuntimeError(f"Unexpected ClearVoice result type: {type(result)}")
+PY
+        [[ -f "$enhanced" ]] || error "ClearVoice did not produce an output file for $base_name"
+        work_file="$enhanced"
+    fi
+
+    # 2. Build cleaned/shortened audio and use it for Whisper
+    mkdir -p "$OUT_DIR"
+    local out_txt="$OUT_DIR/${stem}_${timestamp}.txt"
+    local cleaned_short_audio="$OUT_DIR/${stem}_${timestamp}.clean-short.mp3"
+    local cleaned_short_wav
+    cleaned_short_wav="$(mktemp --suffix=.wav)"
+    local transcribe_wav
+    transcribe_wav="$(mktemp --suffix=.wav)"
+
+    build_transcribe_audio "$work_file" "$transcribe_wav" || error "Could not prepare transcription audio for $base_name"
+
+    log "Saving cleaned and shortened audio for $base_name..."
+    build_clean_short_audio "$transcribe_wav" "$cleaned_short_wav" "$cleaned_short_audio" || error "Could not build cleaned/shortened audio for $base_name"
+
+    # 3. Transcribe cleaned/shortened WAV
+    log "Transcribing $base_name..."
+    local tmp_out_dir
+    tmp_out_dir="$(mktemp -d)"
+    local selected_lang="$lang"
+    if [[ "$lang" == "auto" ]]; then
+        selected_lang="$(detect_de_en_language "$cleaned_short_wav")"
+        log "Auto language detection (de/en): $selected_lang"
+    fi
+
+    local lang_arg=""
+    [[ -n "$selected_lang" ]] && lang_arg="--language $selected_lang"
+
+    run_whisper_transcription "$cleaned_short_wav" "$tmp_out_dir" "$lang_arg" "$model" "$allow_cpu_fallback" || error "Whisper transcription failed in GPU-only mode. Free VRAM or use --model large-v3-turbo (or --allow-cpu-fallback)."
+
+    local generated_txt="$tmp_out_dir/$(basename "${cleaned_short_wav%.*}").txt"
+    [[ -f "$generated_txt" ]] || error "Transcription output not found for $base_name"
+
+    mv "$generated_txt" "$out_txt"
+    rm -rf "$tmp_out_dir"
+    rm -f "$cleaned_short_wav"
+    rm -f "$transcribe_wav"
+
+    printf 'RESULT|source=%s|transcript=%s|audio=%s|enhance=%s|model=%s\n' "$file" "$out_txt" "$cleaned_short_audio" "$run_enhance" "$TRANSCRIBE_MODEL_USED"
+}
+
+# Main
+[[ $# -eq 0 ]] && exit 0
+
+case "$1" in
+    --check) check_deps; exit 0 ;;
+    --doctor) doctor; exit 0 ;;
+    --install) print_install_plan; exit 0 ;;
+esac
+
+INPUT="$1"
+LANG="$DEFAULT_LANG"
+MODEL="$DEFAULT_MODEL"
+ENHANCE_MODE="true"
+ALLOW_CPU_FALLBACK="false"
+
+# Simple arg parsing
+shift || true
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --language) LANG="$2"; shift 2 ;;
+        --model) MODEL="$2"; shift 2 ;;
+        --enhance) ENHANCE_MODE="true"; shift ;;
+        --no-enhance) ENHANCE_MODE="false"; shift ;;
+        --allow-cpu-fallback) ALLOW_CPU_FALLBACK="true"; shift ;;
+        --api) error "Cloud/API transcription is disabled. This pipeline is local-only." ;;
+        *) shift ;;
+    esac
+done
+
+resolve_runtime
+[[ -n "$WHISPER_BIN" ]] || error "Whisper CLI not found. Run --check and --install for local setup commands."
+ensure_processing_ready "$ENHANCE_MODE"
+
+if [[ "$INPUT" == *.zip ]]; then
+    log "Unpacking ZIP: $INPUT"
+    TMP_DIR=$(mktemp -d)
+    unzip -q "$INPUT" -d "$TMP_DIR"
+    find "$TMP_DIR" -type f \( -iname "*.mp3" -o -iname "*.m4a" -o -iname "*.wav" -o -iname "*.ogg" -o -iname "*.flac" \) -print0 | while IFS= read -r -d '' f; do
+        process_file "$f" "$LANG" "$MODEL" "$ENHANCE_MODE" "$ALLOW_CPU_FALLBACK"
+    done
+    rm -rf "$TMP_DIR"
+else
+    process_file "$INPUT" "$LANG" "$MODEL" "$ENHANCE_MODE" "$ALLOW_CPU_FALLBACK"
+fi
