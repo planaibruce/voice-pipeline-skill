@@ -1,6 +1,6 @@
 ---
 name: voice-pipeline
-description: Pipeline for cleaning and transcribing voice messages and audio files. Fully local Whisper + ClearVoice (Arch Linux recommended).
+description: PRIMARY AUDIO HANDLER. Use this skill WHENEVER the user sends a voice message, audio file, or zip file. Fully local Whisper + ClearVoice.
 ---
 
 # Voice Pipeline
