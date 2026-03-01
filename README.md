@@ -1,6 +1,6 @@
 # Voice Pipeline
 
-Self-contained, local-only audio enhancement and transcription.
+Self-contained, local-only audio enhancement and transcription. Developed and tested on Arch Linux (macOS support is theoretical/untested).
 
 ## Installation
 

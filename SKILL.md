@@ -1,11 +1,11 @@
 ---
 name: voice-pipeline
-description: Pipeline for cleaning and transcribing voice messages and audio files (including ZIPs). Fully local Whisper + ClearVoice on macOS/Linux.
+description: Pipeline for cleaning and transcribing voice messages and audio files. Fully local Whisper + ClearVoice (Arch Linux recommended).
 ---
 
 # Voice Pipeline
 
-Automated audio cleaning (ClearVoice) and transcription (Whisper) for any audio input.
+Automated audio cleaning (ClearVoice) and transcription (Whisper) for any audio input. Developed and tested on Arch Linux (macOS support is theoretical/untested).
 
 ## Features
 - **Auto-Processing:** Cleans and transcribes every audio file or ZIP of audio.
