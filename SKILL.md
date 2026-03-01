@@ -9,8 +9,8 @@ Automated audio cleaning (ClearVoice) and transcription (Whisper) for any audio 
 
 ## Features
 - **Auto-Processing:** Cleans and transcribes every audio file or ZIP of audio.
-- **Deep Cleaning:** Uses ClearVoice (MossFormer2) for speech enhancement.
-- **Local Only:** Runs Whisper locally (GPU/Metal/CPU) without cloud fallback.
+- **Deep Cleaning:** Uses ClearVoice (MossFormer2) locally for speech enhancement.
+- **Local Only:** Runs Whisper and ClearVoice entirely locally (GPU/Metal/CPU) without any cloud fallback.
 - **Unpacker:** Automatically extracts and processes audio from ZIP files.
 - **Always Enhance:** ClearVoice runs by default for every file.
 - **Mapped Output:** Transcript filenames are mapped back to source filenames.
