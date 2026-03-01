@@ -35,8 +35,7 @@ openclaw doctor
 ./scripts/process-audio <audio_or_zip>
 ```
 Default enhancement mode is always-on ClearVoice.
-Default language is German (`de`).
-Use `--language auto` for automatic German/English detection.
+Default language is `auto` (automatic German/English detection).
 Default model is `large-v3` for higher accuracy.
 Whisper runs GPU-only by default; CPU fallback is opt-in via `--allow-cpu-fallback`.
 

@@ -28,7 +28,7 @@ The agent uses this skill automatically when audio is detected. You can also run
 Options:
 - `--enhance`: Force ClearVoice cleaning.
 - `--no-enhance`: Disable ClearVoice cleaning.
-- `--language <lang>`: Language (`de` default). Use `auto` for automatic `de/en` detection.
+- `--language <lang>`: Force specific language (e.g. `de` or `en`). Defaults to `auto` (automatic de/en detection).
 - `--model <model>`: Whisper model (default: large-v3).
 - `--allow-cpu-fallback`: Optional fallback to CPU if all GPU model attempts fail.
 - `--check`: Verify dependencies.
