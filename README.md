@@ -39,9 +39,9 @@ Default language is `auto` (automatic German/English detection).
 Default model is `large-v3` for higher accuracy.
 Whisper runs GPU-only by default; CPU fallback is opt-in via `--allow-cpu-fallback`.
 
-Outputs in `~/transcripts`:
-- `<name>_<timestamp>.txt` (full transcript)
-- `<name>_<timestamp>.clean-short.mp3` (cleaned and shortened audio)
+Outputs in `~/voice-transcripts`:
+- `<timestamp>_<name>.txt` (full transcript)
+- `<timestamp>_<name>.clean-short.mp3` (cleaned and shortened audio)
 
 First run order:
 1. `openclaw doctor`

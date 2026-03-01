@@ -1,6 +1,6 @@
 ---
 name: voice-pipeline
-description: PRIMARY AUDIO HANDLER. Use this skill WHENEVER the user sends a voice message, audio file, or zip file. Fully local Whisper + ClearVoice.
+description: PRIMARY AUDIO HANDLER. Use this skill WHENEVER the user sends a voice message, audio file, or zip file. Acknowledge receipt immediately, then process. Fully local Whisper + ClearVoice.
 ---
 
 # Voice Pipeline
@@ -14,8 +14,8 @@ Automated audio cleaning (ClearVoice) and transcription (Whisper) for any audio 
 - **Unpacker:** Automatically extracts and processes audio from ZIP files.
 - **Always Enhance:** ClearVoice runs by default for every file.
 - **Mapped Output:** Transcript filenames are mapped back to source filenames.
-- **Skill Summary:** The assistant summarizes each transcript in the reply message.
-- **Audio Export:** Saves cleaned + shortened MP3 in `~/transcripts`.
+- **Skill Summary:** The assistant summarizes each transcript in the reply message and automatically attaches the full transcript and cleaned audio.
+- **Audio Export:** Saves cleaned + shortened MP3 in `~/voice-transcripts`.
 - **Runtime Discovery:** Detects installed Whisper/ClearVoice paths and reports missing deps with OS-specific install commands.
 
 ## Usage

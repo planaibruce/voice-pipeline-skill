@@ -13,7 +13,7 @@ LEGACY_CV_VENV="${HOME}/.venvs/clearvoice"
 OPENCLAW_VENV_BASE="${HOME}/.openclaw/venvs"
 ALT_WHISPER_VENV="${OPENCLAW_VENV_BASE}/whisper"
 ALT_CV_VENV="${OPENCLAW_VENV_BASE}/clearvoice"
-OUT_DIR="${HOME}/transcripts"
+OUT_DIR="${HOME}/voice-transcripts"
 DEFAULT_MODEL="large-v3"
 DEFAULT_LANG="auto"
 WHISPER_BIN=""
@@ -340,8 +340,9 @@ process_file() {
     base_name=$(basename "$file")
     local stem
     stem=$(basename "${file%.*}")
-    local timestamp
-    timestamp=$(date +%Y%m%d_%H%M%S)
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    
+    
     local run_enhance="false"
 
     # 1. Enhance
@@ -383,8 +384,8 @@ PY
 
     # 2. Build cleaned/shortened audio and use it for Whisper
     mkdir -p "$OUT_DIR"
-    local out_txt="$OUT_DIR/${stem}_${timestamp}.txt"
-    local cleaned_short_audio="$OUT_DIR/${stem}_${timestamp}.clean-short.mp3"
+    local out_txt="$OUT_DIR/${timestamp}_${stem}.txt"
+    local cleaned_short_audio="$OUT_DIR/${timestamp}_${stem}.clean-short.mp3"
     local cleaned_short_wav
     cleaned_short_wav="$(mktemp --suffix=.wav)"
     local transcribe_wav
