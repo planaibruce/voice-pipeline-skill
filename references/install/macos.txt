@@ -1,0 +1,13 @@
+# macOS (Homebrew)
+brew update
+brew install python ffmpeg unzip
+
+# Whisper venv
+python3 -m venv ~/.venvs/voice-pipeline/whisper
+~/.venvs/voice-pipeline/whisper/bin/pip install --upgrade pip
+~/.venvs/voice-pipeline/whisper/bin/pip install openai-whisper torch torchaudio
+
+# ClearVoice venv
+python3 -m venv ~/.venvs/voice-pipeline/clearvoice
+~/.venvs/voice-pipeline/clearvoice/bin/pip install --upgrade pip
+~/.venvs/voice-pipeline/clearvoice/bin/pip install clearvoice

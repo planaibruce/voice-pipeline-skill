@@ -14,8 +14,11 @@ checkpoints/
 *.m4a
 *.ogg
 *.flac
-*.txt
 *.summary.txt
+
+# Text files generated in root (allow references to be pushed)
+/*_*.txt
+!references/
 
 # Virtual environments
 venv/

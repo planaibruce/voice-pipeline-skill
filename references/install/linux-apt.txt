@@ -1,0 +1,13 @@
+# Linux (apt / Debian / Ubuntu)
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip ffmpeg unzip build-essential
+
+# Whisper venv
+python3 -m venv ~/.venvs/voice-pipeline/whisper
+~/.venvs/voice-pipeline/whisper/bin/pip install --upgrade pip
+~/.venvs/voice-pipeline/whisper/bin/pip install openai-whisper torch torchaudio
+
+# ClearVoice venv
+python3 -m venv ~/.venvs/voice-pipeline/clearvoice
+~/.venvs/voice-pipeline/clearvoice/bin/pip install --upgrade pip
+~/.venvs/voice-pipeline/clearvoice/bin/pip install clearvoice
